@@ -1,0 +1,96 @@
+# camcommand
+
+Windows-first Python CLI + library for communicating with Camlock USB serial devices (CH340), including PICO Hub-style line commands.
+
+## Install
+
+```powershell
+pip install camcommand
+```
+
+## CLI usage
+
+```powershell
+camcommand list
+camcommand connect
+camcommand send STATE
+camcommand send UNLOCK
+camcommand send TEMP
+camcommand temp
+camcommand interactive
+camcommand --com COM15 reflash firmware.hex
+camcommand --com COM15 dump backup.hex
+camcommand --com COM15 acs200 send state
+camcommand --com COM15 acs200 send unlock,3
+```
+
+## ACS-200 (CAMCOMMAND hub) quickstart
+
+ACS-200 uses different serial settings and command syntax than the 115200-baud lock devices:
+
+- Serial settings: **9600 8N1**, newline terminator **CR** (`\r`).
+- Commands are typically lowercase and comma-separated (examples below).
+
+Examples:
+
+```powershell
+camcommand --com COM15 acs200 state
+camcommand --com COM15 acs200 locks
+camcommand --com COM15 acs200 unlock 3
+camcommand --com COM15 acs200 hold on
+camcommand --com COM15 acs200 unlock all
+camcommand --com COM15 acs200 output 1 on
+camcommand --com COM15 acs200 outputs off
+camcommand --com COM15 acs200 temp 10
+camcommand --com COM15 acs200 interactive
+```
+
+Raw passthrough is still available if you want to send exactly what the firmware expects:
+
+```powershell
+camcommand --com COM15 acs200 send get_state
+camcommand --com COM15 acs200 send set_relock_duration,10
+```
+
+Optional multi-channel flag (reserved for ACS200-style devices):
+
+```powershell
+camcommand send STATE --port 3
+```
+
+## Python usage
+
+```python
+from camcommand import SerialManager
+from camcommand.serial_manager import SerialConfig
+
+with SerialManager(SerialConfig(port="COM15")) as mgr:
+    print(mgr.send_and_read_response("STATE"))
+```
+
+## Example app
+
+Run the included example script:
+
+```powershell
+python examples\basic_demo.py
+python examples\basic_demo.py --com COM15
+```
+
+## Notes
+
+- Commands are sent as complete lines terminated by `\n` (never character-by-character).
+- Responses are read as line-based text; multi-line responses are collected until a blank line or timeout.
+- Serial speed is fixed at **115200 baud**.
+- Package name on PyPI and the import/package name are both `camcommand`.
+- For development installs from source, you can use `pip install -e .` from the project folder.
+- `reflash` is standalone (no extra Python deps beyond `pyserial`) and targets the Camlock UPDI setup used by the reference flashing app.
+- `dump` reads the entire flash over UPDI and saves an Intel HEX file.
+- `reflash` vendors a subset of the `pyupdi` project (MIT); see `camcommand/_pyupdi/LICENSE` in the source distribution.
+
+## Linux quickstart
+
+- Install: `pip install camcommand`
+- List ports: `camcommand list`
+- If you get `PermissionError` opening `/dev/ttyUSB0`, add your user to the `dialout` group and re-login:
+  - `sudo usermod -a -G dialout $USER`
