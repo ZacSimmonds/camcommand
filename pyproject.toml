@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camcommand"
-version = "0.3.6"
+version = "0.3.7"
 description = "Python CLI + library for Camlock USB-serial access control devices (CH340)."
 readme = "README.md"
 requires-python = ">=3.9"
