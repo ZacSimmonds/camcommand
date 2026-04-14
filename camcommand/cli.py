@@ -7,6 +7,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version as pkg_version
 from typing import List, Optional
 
+from .acs200_protocol import parse_response_lines, status_code_meaning
 from .discovery import find_devices, pick_default_device
 from .dump import DumpError, DumpOptions, dump_hex
 from .exceptions import CamcommandError, ConnectionError, DiscoveryError, ProtocolError
@@ -58,7 +59,7 @@ def _build_manager(args) -> SerialManager:
 def _build_acs200_manager(args) -> SerialManager:
     port = _resolve_com_port(args.com)
 
-    line_ending = "\r"
+    line_ending = "\n"
     if getattr(args, "line_ending", None):
         le = str(args.line_ending).lower()
         if le == "cr":
@@ -76,6 +77,11 @@ def _build_acs200_manager(args) -> SerialManager:
         line_ending=line_ending,
         read_timeout_s=args.read_timeout,
         write_timeout_s=args.write_timeout,
+        # Some USB-serial devices reset on DTR/RTS toggles when a port is opened.
+        # Disable both by default for ACS-200 so one-shot CLI invocations don't trigger boot-time states.
+        dtr=(str(getattr(args, "dtr", "off")).strip().lower() == "on"),
+        rts=(str(getattr(args, "rts", "off")).strip().lower() == "on"),
+        open_delay_s=float(getattr(args, "connect_delay", 0.0) or 0.0),
     )
     return SerialManager(cfg)
 
@@ -156,6 +162,15 @@ def cmd_acs200_send(args) -> int:
     manager = _build_acs200_manager(args)
     command = " ".join(args.command).strip()
     with manager:
+        if getattr(args, "trace", False):
+            le = _format_line_ending(manager.line_ending)
+            print(
+                f"[acs200] port={manager.port} baud={manager.baudrate} "
+                f"dtr={_format_onoff(str(getattr(args, 'dtr', 'off')).strip().lower() == 'on')} "
+                f"rts={_format_onoff(str(getattr(args, 'rts', 'off')).strip().lower() == 'on')} "
+                f"tx: {command}{le}",
+                file=sys.stderr,
+            )
         lines = manager.send_and_read_response(
             command,
             total_timeout_s=args.total_timeout,
@@ -166,9 +181,19 @@ def cmd_acs200_send(args) -> int:
     if not lines:
         print("(no response)")
         return 0
+
+    parsed = parse_response_lines(lines)
+    if parsed.status_code is not None and parsed.status_code != 0:
+        meaning = status_code_meaning(parsed.status_code)
+        print(f"[acs200] status {parsed.status_code}: {meaning}", file=sys.stderr)
+        # Propagate non-zero status to the process exit code.
+        # (Still print raw lines so users can compare with the device/GUI.)
+        exit_code = parsed.status_code
+    else:
+        exit_code = 0
     for line in lines:
         print(line)
-    return 0
+    return exit_code
 
 
 def _acs200_cmd(parts: list[str]) -> str:
@@ -184,20 +209,50 @@ def _acs200_onoff(value: str) -> str:
     raise ProtocolError("Expected on/off (or 1/0).")
 
 
+def _format_line_ending(line_ending: str) -> str:
+    if line_ending == "\r":
+        return "\\r"
+    if line_ending == "\n":
+        return "\\n"
+    if line_ending == "\r\n":
+        return "\\r\\n"
+    if line_ending == "":
+        return "<none>"
+    return repr(line_ending)
+
+def _format_onoff(v: bool) -> str:
+    return "on" if v else "off"
+
+
 def _acs200_send_simple(args, command: str) -> int:
     manager = _build_acs200_manager(args)
     with manager:
+        if getattr(args, "trace", False):
+            le = _format_line_ending(manager.line_ending)
+            print(
+                f"[acs200] port={manager.port} baud={manager.baudrate} "
+                f"dtr={_format_onoff(str(getattr(args, 'dtr', 'off')).strip().lower() == 'on')} "
+                f"rts={_format_onoff(str(getattr(args, 'rts', 'off')).strip().lower() == 'on')} "
+                f"tx: {command}{le}",
+                file=sys.stderr,
+            )
         lines = manager.send_and_read_response(
             command,
             total_timeout_s=args.total_timeout,
             idle_timeout_s=args.idle_timeout,
             clear_input=True,
         )
+    exit_code = 0
+    parsed = parse_response_lines(lines)
+    if parsed.status_code is not None and parsed.status_code != 0:
+        meaning = status_code_meaning(parsed.status_code)
+        print(f"[acs200] status {parsed.status_code}: {meaning}", file=sys.stderr)
+        exit_code = parsed.status_code
     for line in lines:
         print(line)
     if not lines:
         print("(no response)")
-    return 0
+    return exit_code
 
 
 def cmd_acs200_unlock(args) -> int:
@@ -481,8 +536,31 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
     sp.add_argument(
         "--line-ending",
         choices=["cr", "lf", "crlf", "none"],
-        default="cr",
-        help="Line terminator to append to ACS-200 commands (default: cr).",
+        default="lf",
+        help="Line terminator to append to ACS-200 commands (default: lf).",
+    )
+    sp.add_argument(
+        "--connect-delay",
+        type=float,
+        default=2.0,
+        help="Seconds to wait after opening the serial port before sending (default: 2.0).",
+    )
+    sp.add_argument(
+        "--dtr",
+        choices=["on", "off"],
+        default="off",
+        help="Set DTR while connected (default: off).",
+    )
+    sp.add_argument(
+        "--rts",
+        choices=["on", "off"],
+        default="off",
+        help="Set RTS while connected (default: off).",
+    )
+    sp.add_argument(
+        "--trace",
+        action="store_true",
+        help="Print the exact ACS-200 command line being sent (includes line ending).",
     )
     acs = sp.add_subparsers(dest="acs_cmd", required=True)
 

@@ -28,8 +28,11 @@ camcommand --com COM15 acs200 send unlock,3
 
 ACS-200 uses different serial settings and command syntax than the 115200-baud lock devices:
 
-- Serial settings: **9600 8N1**, newline terminator **CR** (`\r`).
+- Serial settings: **9600 8N1**, newline terminator **LF** (`\n`).
 - Commands are typically lowercase and comma-separated (examples below).
+- `camcommand` disables **DTR/RTS** by default for ACS-200 to avoid device resets on connect caused by control-line toggling (use `--dtr on` / `--rts on` only if your hardware requires it).
+- `camcommand` waits briefly after opening the serial port before sending commands (default: 2 seconds) to allow the controller to finish initialization; override with `--connect-delay`.
+- Some firmware variants prefix responses with a numeric status/event code (e.g. `6`); `camcommand` will print a short decode to stderr and return that non-zero code as the process exit code.
 
 Examples:
 
@@ -37,6 +40,7 @@ Examples:
 camcommand --com COM15 acs200 state
 camcommand --com COM15 acs200 locks
 camcommand --com COM15 acs200 unlock 3
+camcommand --com COM15 acs200 --trace unlock 3
 camcommand --com COM15 acs200 hold on
 camcommand --com COM15 acs200 unlock all
 camcommand --com COM15 acs200 output 1 on

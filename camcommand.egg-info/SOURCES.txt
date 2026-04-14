@@ -2,6 +2,7 @@ MANIFEST.in
 README.md
 pyproject.toml
 camcommand/__init__.py
+camcommand/acs200_protocol.py
 camcommand/cli.py
 camcommand/device.py
 camcommand/discovery.py
@@ -24,3 +25,4 @@ camcommand/_pyupdi/updi/link.py
 camcommand/_pyupdi/updi/nvm.py
 camcommand/_pyupdi/updi/physical.py
 camcommand/_pyupdi/updi/timeout.py
+tests/test_acs200_protocol.py

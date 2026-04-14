@@ -57,6 +57,9 @@ class SerialConfig:
     baudrate: int = 115200
     line_ending: str = "\n"
     encoding: str = "utf-8"
+    dtr: Optional[bool] = None
+    rts: Optional[bool] = None
+    open_delay_s: float = 0.0
 
 
 class SerialManager:
@@ -76,6 +79,9 @@ class SerialManager:
             baudrate=int(config.baudrate),
             line_ending=config.line_ending,
             encoding=config.encoding,
+            dtr=config.dtr,
+            rts=config.rts,
+            open_delay_s=float(config.open_delay_s or 0.0),
         )
         self._ser: Optional[serial.Serial] = None
         self._io_lock = threading.RLock()
@@ -94,6 +100,10 @@ class SerialManager:
     def baudrate(self) -> int:
         return self._config.baudrate
 
+    @property
+    def line_ending(self) -> str:
+        return self._config.line_ending
+
     def is_open(self) -> bool:
         s = self._ser
         return bool(s and s.is_open)
@@ -103,14 +113,38 @@ class SerialManager:
             if self.is_open():
                 return
             try:
-                self._ser = serial.Serial(
-                    port=self._config.port,
-                    baudrate=self._config.baudrate,
-                    timeout=self._config.read_timeout_s,
-                    write_timeout=self._config.write_timeout_s,
-                )
+                ser = serial.Serial()  # configure before open (DTR/RTS can reset some devices)
+                ser.port = self._config.port
+                ser.baudrate = self._config.baudrate
+                ser.timeout = self._config.read_timeout_s
+                ser.write_timeout = self._config.write_timeout_s
+                if self._config.dtr is not None:
+                    try:
+                        ser.dtr = bool(self._config.dtr)
+                    except Exception:
+                        pass
+                if self._config.rts is not None:
+                    try:
+                        ser.rts = bool(self._config.rts)
+                    except Exception:
+                        pass
+                ser.open()
+                if self._config.dtr is not None:
+                    try:
+                        ser.dtr = bool(self._config.dtr)
+                    except Exception:
+                        pass
+                if self._config.rts is not None:
+                    try:
+                        ser.rts = bool(self._config.rts)
+                    except Exception:
+                        pass
+                self._ser = ser
             except (serial.SerialException, OSError) as exc:
                 raise ConnectionError(f"Failed to open {self._config.port}: {exc}") from exc
+
+            if self._config.open_delay_s > 0:
+                time.sleep(self._config.open_delay_s)
 
     def close(self) -> None:
         self.stop_reader()
