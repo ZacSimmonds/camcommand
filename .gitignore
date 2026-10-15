@@ -21,3 +21,8 @@ REFERENCE/
 AGENTS.md
 launch-claude.bat
 graphify-out/
+
+# Installer build artifacts (regenerate with installer/build.ps1)
+installer/build-tmp/
+installer/Output/
+installer/camcommand.exe
